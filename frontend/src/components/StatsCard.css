@@ -1,0 +1,101 @@
+.stats-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+  border: 1px solid var(--color-border-light);
+  animation: fadeInUp 0.4s ease forwards;
+}
+
+.stats-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.stats-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.stats-card__title {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.stats-card__icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stats-card--primary .stats-card__icon-wrap {
+  background: var(--color-error-bg);
+  color: var(--color-primary);
+}
+
+.stats-card--success .stats-card__icon-wrap {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.stats-card--info .stats-card__icon-wrap {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.stats-card--warning .stats-card__icon-wrap {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.stats-card__value {
+  font-size: var(--font-size-3xl);
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+
+.stats-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stats-card__subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.stats-card__trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.stats-card__trend--up {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.stats-card__trend--down {
+  color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.stats-card__trend--neutral {
+  color: var(--color-text-muted);
+  background: var(--color-bg-secondary);
+}
