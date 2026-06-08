@@ -409,17 +409,22 @@
 }
 
 .builder-workbench {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
   gap: 18px;
+  align-items: start;
 }
 
-.panel--builder-form {
-  order: 2;
-}
-
+.panel--builder-form,
 .panel--builder-canvas {
-  order: 1;
+  display: grid;
+  align-content: start;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel--builder-editor {
   overflow: hidden;
 }
 
@@ -718,6 +723,10 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .builder-workbench {
+    grid-template-columns: 1fr;
+  }
+
   .app-shell {
     grid-template-columns: 240px 1fr;
   }
@@ -728,6 +737,7 @@
   .app-shell,
   .dashboard-columns,
   .builder-grid,
+  .builder-workbench,
   .survey-grid,
   .metric-grid {
     grid-template-columns: 1fr;

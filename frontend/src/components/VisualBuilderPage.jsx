@@ -615,21 +615,33 @@ export default function VisualBuilderPage() {
             </div>
           </div>
           {selectedSurvey ? (
-            selectedQuestions.length ? (
-              <SurveyFlowBuilder
-                surveyId={selectedSurveyId}
-                questions={selectedQuestions}
-                onRefresh={() => refreshSelectedSurvey(selectedSurveyId)}
-                onRemoveQuestion={removeQuestion}
-                onSuccess={success}
-                onError={error}
-              />
-            ) : (
-              <CompactEmptyState
-                title="Вопросов пока нет"
-                description="Добавьте первый вопрос, чтобы карточки и стрелки появились на холсте."
-              />
-            )
+            <>
+              <div className="builder-note builder-note--inline">
+                <strong>{selectedQuestions.length || 0} вопросов в сценарии</strong>
+                <p>
+                  Здесь только краткая сводка. Полный визуальный редактор вынесен в отдельный блок
+                  ниже, чтобы ему хватало ширины.
+                </p>
+              </div>
+              {selectedQuestions.length ? (
+                <div className="question-list">
+                  {selectedQuestions.map((question, index) => (
+                    <div key={question.id} className="question-list__item">
+                      <div className="question-list__index">{index + 1}</div>
+                      <div className="question-list__content">
+                        <strong>{question.text}</strong>
+                        <p>{BUILDER_QUESTION_TYPE_OPTIONS.find((item) => item.value === question.type)?.label || question.type}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <CompactEmptyState
+                  title="Вопросов пока нет"
+                  description="Добавьте первый вопрос, и он появится в редакторе ниже."
+                />
+              )}
+            </>
           ) : (
             <CompactEmptyState
               title="Черновик не выбран"
@@ -637,6 +649,37 @@ export default function VisualBuilderPage() {
             />
           )}
         </div>
+      </section>
+
+      <section className="panel panel--builder-editor">
+        <div className="panel__header">
+          <div>
+            <span className="panel__eyebrow">Редактор опросов</span>
+            <h3>{selectedSurvey?.title || 'Выберите черновик для редактирования'}</h3>
+          </div>
+        </div>
+        {selectedSurvey ? (
+          selectedQuestions.length ? (
+            <SurveyFlowBuilder
+              surveyId={selectedSurveyId}
+              questions={selectedQuestions}
+              onRefresh={() => refreshSelectedSurvey(selectedSurveyId)}
+              onRemoveQuestion={removeQuestion}
+              onSuccess={success}
+              onError={error}
+            />
+          ) : (
+            <CompactEmptyState
+              title="Редактор пока пуст"
+              description="Добавьте первый вопрос сверху, и здесь появятся карточки и связи."
+            />
+          )
+        ) : (
+          <CompactEmptyState
+            title="Нет активного черновика"
+            description="Сначала выберите или создайте опрос, после этого откроется редактор."
+          />
+        )}
       </section>
     </div>
   );

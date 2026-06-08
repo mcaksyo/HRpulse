@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   Controls,
@@ -15,9 +15,14 @@ import { questionsAPI } from '../services/api.js';
 import '@xyflow/react/dist/style.css';
 import './SurveyFlowBuilder.css';
 
-const FLOW_STORAGE_PREFIX = 'pulsehr-flow-layout';
+const FLOW_STORAGE_PREFIX = 'pulsehr-flow-layout-v2';
 const FLOW_NODE_TYPES = {
   surveyQuestion: SurveyQuestionNode,
+};
+const FIT_VIEW_OPTIONS = {
+  padding: 0.16,
+  minZoom: 0.5,
+  maxZoom: 1.2,
 };
 
 function normalizeQuestionType(type) {
@@ -68,7 +73,9 @@ function getBranchValueOptions(question) {
   const normalizedType = normalizeQuestionType(question?.type);
 
   if (normalizedType === 'single' || normalizedType === 'multiple') {
-    return Array.isArray(question?.options) ? question.options : [];
+    return Array.isArray(question?.options)
+      ? [...new Set(question.options.map((item) => String(item)))]
+      : [];
   }
 
   if (normalizedType === 'scale') {
@@ -192,13 +199,13 @@ function SurveyQuestionNode({ data, selected }) {
         </div>
 
         {data.branchOptions.length ? (
-          data.branchOptions.map((option) => {
+          data.branchOptions.map((option, optionIndex) => {
             const isActive = data.activeBranchValues.includes(String(option));
             const isSelected = data.selectedBranchValue === String(option);
 
             return (
               <div
-                key={option}
+                key={`${data.question.id}-${option}-${optionIndex}`}
                 className={`survey-flow-node__branch-row ${isActive ? 'survey-flow-node__branch-row--active' : ''} ${isSelected ? 'survey-flow-node__branch-row--selected' : ''}`}
               >
                 <div>
@@ -249,7 +256,52 @@ export default function SurveyFlowBuilder({
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [selectedBranchId, setSelectedBranchId] = useState(null);
+  const reactFlowRef = useRef(null);
+  const canvasContainerRef = useRef(null);
+  const [isCanvasReady, setIsCanvasReady] = useState(false);
   const orderedQuestions = useMemo(() => (Array.isArray(questions) ? questions : []), [questions]);
+  const canvasHeight = useMemo(() => {
+    const rows = Math.max(1, Math.ceil(orderedQuestions.length / 3));
+    return Math.max(760, rows * 300);
+  }, [orderedQuestions.length]);
+  const fitCanvas = useCallback(() => {
+    if (!reactFlowRef.current || !orderedQuestions.length || !isCanvasReady) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      reactFlowRef.current.fitView(FIT_VIEW_OPTIONS);
+    });
+  }, [isCanvasReady, orderedQuestions.length]);
+
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+
+    if (!container) {
+      setIsCanvasReady(false);
+      return undefined;
+    }
+
+    const updateCanvasState = () => {
+      setIsCanvasReady(container.clientWidth > 0 && container.clientHeight > 0);
+    };
+
+    updateCanvasState();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => {
+        updateCanvasState();
+      });
+
+      observer.observe(container);
+
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateCanvasState);
+    return () => window.removeEventListener('resize', updateCanvasState);
+  }, [canvasHeight, surveyId]);
+
   const moveQuestion = useCallback(async (questionId, direction) => {
     const currentIndex = orderedQuestions.findIndex((item) => item.id === questionId);
     const nextIndex = currentIndex + direction;
@@ -512,7 +564,20 @@ export default function SurveyFlowBuilder({
       })),
     );
     persistLayout(nextNodes);
+    fitCanvas();
   }
+
+  useEffect(() => {
+    if (!nodes.length) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      fitCanvas();
+    }, 80);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [fitCanvas, nodes, surveyId]);
 
   const selectedEdge = buildEdges().find((edge) => edge.id === selectedBranchId);
   const selectedQuestion = selectedEdge?.data?.questionId
@@ -567,34 +632,51 @@ export default function SurveyFlowBuilder({
         </div>
       </div>
 
-      <div className="survey-flow-builder__canvas">
-        <ReactFlow
-          nodes={nodes}
-          edges={buildEdges()}
-          nodeTypes={FLOW_NODE_TYPES}
-          onNodesChange={onNodesChange}
-          onConnect={handleConnect}
-          onNodeDragStop={handleNodeDragStop}
-          onEdgeClick={(_, edge) =>
-            setSelectedBranchId(edge.data?.kind === 'branch' ? edge.id : null)
-          }
-          onPaneClick={() => setSelectedBranchId(null)}
-          fitView
-          minZoom={0.45}
-          maxZoom={1.5}
-          defaultEdgeOptions={{
-            type: 'smoothstep',
-          }}
-          connectionLineStyle={{
-            stroke: '#e91428',
-            strokeWidth: 2,
-          }}
-          className="survey-flow-canvas"
-        >
-          <MiniMap pannable zoomable className="survey-flow-canvas__minimap" />
-          <Controls className="survey-flow-canvas__controls" showInteractive={false} />
-          <Background gap={20} size={1} color="rgba(148, 163, 184, 0.22)" />
-        </ReactFlow>
+      <div
+        ref={canvasContainerRef}
+        className="survey-flow-builder__canvas"
+        style={{ height: `${canvasHeight}px` }}
+      >
+        {isCanvasReady ? (
+          <ReactFlow
+            key={`${surveyId}-${orderedQuestions.length}`}
+            style={{ width: '100%', height: '100%' }}
+            onInit={(instance) => {
+              reactFlowRef.current = instance;
+              fitCanvas();
+            }}
+            nodes={nodes}
+            edges={buildEdges()}
+            nodeTypes={FLOW_NODE_TYPES}
+            onNodesChange={onNodesChange}
+            onConnect={handleConnect}
+            onNodeDragStop={handleNodeDragStop}
+            onEdgeClick={(_, edge) =>
+              setSelectedBranchId(edge.data?.kind === 'branch' ? edge.id : null)
+            }
+            onPaneClick={() => setSelectedBranchId(null)}
+            fitView
+            minZoom={0.45}
+            maxZoom={1.5}
+            defaultEdgeOptions={{
+              type: 'smoothstep',
+            }}
+            connectionLineStyle={{
+              stroke: '#e91428',
+              strokeWidth: 2,
+            }}
+            className="survey-flow-canvas"
+          >
+            <MiniMap pannable zoomable className="survey-flow-canvas__minimap" />
+            <Controls className="survey-flow-canvas__controls" showInteractive={false} />
+            <Background gap={20} size={1} color="rgba(148, 163, 184, 0.22)" />
+          </ReactFlow>
+        ) : (
+          <div className="survey-flow-canvas__fallback">
+            <strong>Подготавливаем холст редактора</strong>
+            <p>Контейнер получает размеры, после этого визуальный редактор появится автоматически.</p>
+          </div>
+        )}
       </div>
 
       <div className="survey-flow-builder__inspector">
