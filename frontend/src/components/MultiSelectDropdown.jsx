@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 
 function buildSelectionLabel(options, selectedValues, placeholder) {
@@ -25,10 +25,7 @@ export default function MultiSelectDropdown({
   const rootRef = useRef(null);
   const [open, setOpen] = useState(false);
 
-  const normalizedSelectedValues = useMemo(
-    () => [...new Set(Array.isArray(selectedValues) ? selectedValues : [])],
-    [selectedValues],
-  );
+  const normalizedSelectedValues = [...new Set(Array.isArray(selectedValues) ? selectedValues : [])];
   const allSelected = Boolean(options.length) && normalizedSelectedValues.length === options.length;
 
   useEffect(() => {
@@ -69,7 +66,7 @@ export default function MultiSelectDropdown({
   }
 
   return (
-    <label className="field">
+    <div className="field">
       <span>{label}</span>
       <div
         ref={rootRef}
@@ -139,6 +136,6 @@ export default function MultiSelectDropdown({
           </div>
         ) : null}
       </div>
-    </label>
+    </div>
   );
 }

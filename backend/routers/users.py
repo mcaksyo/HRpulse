@@ -117,7 +117,8 @@ async def get_audience_options(
     )
 
     roles = sorted(
-        {
+        {role.value for role in UserRole}
+        | {
             role.value if isinstance(role, UserRole) else str(role)
             for role in role_result.scalars().all()
             if role
