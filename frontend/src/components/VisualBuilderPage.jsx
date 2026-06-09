@@ -583,26 +583,28 @@ export default function VisualBuilderPage() {
                 }
               />
             </label>
-            <Input
-              label="Целевые роли через запятую"
-              value={surveyForm.targetRoles}
-              onChange={(event) =>
-                setSurveyForm((current) => ({ ...current, targetRoles: event.target.value }))
+            <MultiSelectDropdown
+              label="Целевые роли"
+              options={roleOptions}
+              selectedValues={surveyForm.targetRoles}
+              onChange={(values) =>
+                setSurveyForm((current) => ({ ...current, targetRoles: values }))
               }
-              placeholder="employee"
-              fullWidth
+              placeholder={loadingAudienceOptions ? 'Загружаем роли...' : 'Выберите одну или несколько ролей'}
+              disabled={loadingAudienceOptions}
             />
-            <Input
-              label="Подразделения через запятую"
-              value={surveyForm.targetDepartments}
-              onChange={(event) =>
+            <MultiSelectDropdown
+              label="Подразделения"
+              options={departmentOptions}
+              selectedValues={surveyForm.targetDepartments}
+              onChange={(values) =>
                 setSurveyForm((current) => ({
                   ...current,
-                  targetDepartments: event.target.value,
+                  targetDepartments: values,
                 }))
               }
-              placeholder="Розница, Офис, HR"
-              fullWidth
+              placeholder={loadingAudienceOptions ? 'Загружаем подразделения...' : 'Выберите одно или несколько подразделений'}
+              disabled={loadingAudienceOptions}
             />
             <div className="builder-note">
               <strong>Пустая аудитория = рассылка всем</strong>
