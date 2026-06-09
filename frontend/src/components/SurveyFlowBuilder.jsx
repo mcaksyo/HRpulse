@@ -89,9 +89,18 @@ function getBranchValueOptions(question) {
   return [];
 }
 
+function isBranchOnlyQuestion(question) {
+  return Boolean(question?.branch_only ?? question?.branchOnly);
+}
+
 function getDefaultNextQuestion(questionId, questions) {
   const currentIndex = questions.findIndex((item) => item.id === questionId);
-  return currentIndex >= 0 ? questions[currentIndex + 1] || null : null;
+
+  if (currentIndex < 0) {
+    return null;
+  }
+
+  return questions.slice(currentIndex + 1).find((item) => !isBranchOnlyQuestion(item)) || null;
 }
 
 function isSkipBranchValue(value) {
@@ -117,11 +126,19 @@ function getQuestionBranchOptions(question, questions) {
   return branchOptions;
 }
 
-function getExplicitBranchRule(question, conditionValue) {
-  const branchRules = Array.isArray(question?.branch_rules) ? question.branch_rules : [];
-  return (
-    branchRules.find((rule) => String(rule.condition_value) === String(conditionValue)) || null
-  );
+function getUniqueQuestions(questions) {
+  const seen = new Set();
+
+  return questions.filter((question) => {
+    const questionId = String(question?.id ?? '');
+
+    if (!questionId || seen.has(questionId)) {
+      return false;
+    }
+
+    seen.add(questionId);
+    return true;
+  });
 }
 
 function getFallbackPosition(index) {
@@ -215,6 +232,9 @@ function SurveyQuestionNode({ data, selected }) {
         <div className="survey-flow-node__tags">
           <span>{data.typeLabel}</span>
           {data.question.required ? <span>Обязательный</span> : null}
+          {data.question.branch_only || data.question.branchOnly ? (
+            <span className="survey-flow-node__tag--branch-only">Только по ветке</span>
+          ) : null}
         </div>
       </div>
 
@@ -289,32 +309,45 @@ export default function SurveyFlowBuilder({
   const [selectedBranchId, setSelectedBranchId] = useState(null);
   const reactFlowRef = useRef(null);
   const canvasContainerRef = useRef(null);
-  const [isCanvasReady, setIsCanvasReady] = useState(false);
-  const orderedQuestions = useMemo(() => (Array.isArray(questions) ? questions : []), [questions]);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [shouldRenderCanvas, setShouldRenderCanvas] = useState(false);
+  const orderedQuestions = useMemo(
+    () => getUniqueQuestions(Array.isArray(questions) ? questions : []),
+    [questions],
+  );
+  const mainRouteQuestions = useMemo(
+    () => orderedQuestions.filter((question) => !isBranchOnlyQuestion(question)),
+    [orderedQuestions],
+  );
   const canvasHeight = useMemo(() => {
     const rows = Math.max(1, Math.ceil(orderedQuestions.length / 3));
     return Math.max(760, rows * 300);
   }, [orderedQuestions.length]);
+  const isCanvasReady = canvasSize.width > 0 && canvasSize.height > 0;
+
   const fitCanvas = useCallback(() => {
-    if (!reactFlowRef.current || !orderedQuestions.length || !isCanvasReady) {
+    if (!reactFlowRef.current || !orderedQuestions.length || !shouldRenderCanvas) {
       return;
     }
 
     window.requestAnimationFrame(() => {
       reactFlowRef.current.fitView(FIT_VIEW_OPTIONS);
     });
-  }, [isCanvasReady, orderedQuestions.length]);
+  }, [orderedQuestions.length, shouldRenderCanvas]);
 
   useEffect(() => {
     const container = canvasContainerRef.current;
 
     if (!container) {
-      setIsCanvasReady(false);
+      setCanvasSize({ width: 0, height: 0 });
       return undefined;
     }
 
     const updateCanvasState = () => {
-      setIsCanvasReady(container.clientWidth > 0 && container.clientHeight > 0);
+      setCanvasSize({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
     };
 
     updateCanvasState();
@@ -332,6 +365,28 @@ export default function SurveyFlowBuilder({
     window.addEventListener('resize', updateCanvasState);
     return () => window.removeEventListener('resize', updateCanvasState);
   }, [canvasHeight, surveyId]);
+
+  useEffect(() => {
+    setShouldRenderCanvas(false);
+
+    if (!isCanvasReady) {
+      return undefined;
+    }
+
+    let frameA = 0;
+    let frameB = 0;
+
+    frameA = window.requestAnimationFrame(() => {
+      frameB = window.requestAnimationFrame(() => {
+        setShouldRenderCanvas(true);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameA);
+      window.cancelAnimationFrame(frameB);
+    };
+  }, [canvasHeight, isCanvasReady, orderedQuestions.length, surveyId]);
 
   const moveQuestion = useCallback(async (questionId, direction) => {
     const currentIndex = orderedQuestions.findIndex((item) => item.id === questionId);
@@ -361,22 +416,13 @@ export default function SurveyFlowBuilder({
 
     setNodes((currentNodes) =>
       orderedQuestions.map((question, index) => {
-        const nextQuestion = getDefaultNextQuestion(question.id, orderedQuestions);
         const currentNode = currentNodes.find((node) => node.id === String(question.id));
         const selectedRule = Array.isArray(question.branch_rules)
           ? question.branch_rules.find((rule) => getEdgeId(question.id, rule.condition_value) === selectedBranchId)
           : null;
-        const hasImplicitSkipBranch =
-          !question.required &&
-          Boolean(nextQuestion) &&
-          !getExplicitBranchRule(question, SKIP_BRANCH_VALUE);
         const activeBranchValues = Array.isArray(question.branch_rules)
           ? question.branch_rules.map((rule) => String(rule.condition_value))
           : [];
-
-        if (hasImplicitSkipBranch) {
-          activeBranchValues.push(SKIP_BRANCH_VALUE);
-        }
 
         return {
           id: String(question.id),
@@ -389,7 +435,6 @@ export default function SurveyFlowBuilder({
             typeLabel: getQuestionTypeLabel(question.type),
             branchOptions: getQuestionBranchOptions(question, orderedQuestions),
             activeBranchValues: [...new Set(activeBranchValues)],
-            implicitBranchValues: hasImplicitSkipBranch ? [SKIP_BRANCH_VALUE] : [],
             selectedBranchValue:
               selectedRule?.condition_value === undefined || selectedRule?.condition_value === null
                 ? ''
@@ -403,12 +448,11 @@ export default function SurveyFlowBuilder({
     );
   }, [moveQuestion, onRemoveQuestion, orderedQuestions, selectedBranchId, setNodes, surveyId]);
 
-  function buildEdges() {
+  const edges = useMemo(() => {
     const items = [];
 
     orderedQuestions.forEach((question) => {
       const nextQuestion = getDefaultNextQuestion(question.id, orderedQuestions);
-      const explicitSkipRule = getExplicitBranchRule(question, SKIP_BRANCH_VALUE);
 
       if (nextQuestion) {
         items.push({
@@ -426,44 +470,6 @@ export default function SurveyFlowBuilder({
           markerEnd: {
             type: MarkerType.ArrowClosed,
             color: '#cbd5e1',
-          },
-        });
-      }
-
-      if (!question.required && nextQuestion && !explicitSkipRule) {
-        const color = '#0f766e';
-        const edgeId = getEdgeId(question.id, SKIP_BRANCH_VALUE);
-
-        items.push({
-          id: edgeId,
-          source: String(question.id),
-          sourceHandle: `branch::${encodeBranchValue(SKIP_BRANCH_VALUE)}`,
-          target: String(nextQuestion.id),
-          type: 'smoothstep',
-          animated: true,
-          label: 'Пропуск -> Далее',
-          labelBgPadding: [8, 4],
-          labelBgBorderRadius: 999,
-          labelBgStyle: {
-            fill: '#ffffff',
-            fillOpacity: 0.92,
-            stroke: color,
-            strokeWidth: 1,
-          },
-          style: {
-            stroke: color,
-            strokeWidth: selectedBranchId === edgeId ? 3 : 2.2,
-            strokeDasharray: '8 6',
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color,
-          },
-          data: {
-            kind: 'branch',
-            questionId: question.id,
-            conditionValue: SKIP_BRANCH_VALUE,
-            implicit: true,
           },
         });
       }
@@ -514,7 +520,7 @@ export default function SurveyFlowBuilder({
     });
 
     return items;
-  }
+  }, [orderedQuestions, selectedBranchId]);
 
   function persistLayout(nextNodes) {
     writeStoredLayout(surveyId, nextNodes);
@@ -666,7 +672,7 @@ export default function SurveyFlowBuilder({
     return () => window.clearTimeout(timeoutId);
   }, [fitCanvas, nodes, surveyId]);
 
-  const selectedEdge = buildEdges().find((edge) => edge.id === selectedBranchId);
+  const selectedEdge = edges.find((edge) => edge.id === selectedBranchId);
   const selectedQuestion = selectedEdge?.data?.questionId
     ? orderedQuestions.find((item) => item.id === selectedEdge.data.questionId)
     : null;
@@ -675,18 +681,7 @@ export default function SurveyFlowBuilder({
         (rule) => String(rule.condition_value) === String(selectedEdge?.data?.conditionValue),
       )
     : null;
-  const selectedRule =
-    selectedStoredRule ||
-    (selectedQuestion &&
-    selectedEdge?.data?.implicit &&
-    String(selectedEdge?.data?.conditionValue) === SKIP_BRANCH_VALUE
-      ? {
-          condition_question_id: selectedQuestion.id,
-          condition_value: SKIP_BRANCH_VALUE,
-          action: 'skip_to',
-          target_question_id: getDefaultNextQuestion(selectedQuestion.id, orderedQuestions)?.id || null,
-        }
-      : null);
+  const selectedRule = selectedStoredRule || null;
 
   return (
     <div className="survey-flow-builder">
@@ -701,7 +696,7 @@ export default function SurveyFlowBuilder({
             карточках.
           </p>
           <div className="survey-flow-route">
-            {orderedQuestions.map((question, index) => (
+            {mainRouteQuestions.map((question, index) => (
               <div key={question.id} className="survey-flow-route__item">
                 <span>{index + 1}</span>
                 <div>
@@ -725,6 +720,10 @@ export default function SurveyFlowBuilder({
             После клика по красной стрелке справа можно сменить действие: `GoTo`, `Показать` или
             `Скрыть`.
           </p>
+          <p>
+            Карточки с меткой "Только по ветке" не входят в серый маршрут и открываются только
+            через настроенные переходы.
+          </p>
           <Button size="sm" variant="secondary" icon={WandSparkles} onClick={resetLayout}>
             Автораскладка карточек
           </Button>
@@ -736,16 +735,16 @@ export default function SurveyFlowBuilder({
         className="survey-flow-builder__canvas"
         style={{ height: `${canvasHeight}px` }}
       >
-        {isCanvasReady ? (
+        {shouldRenderCanvas ? (
           <ReactFlow
-            key={`${surveyId}-${orderedQuestions.length}`}
+            key={`${surveyId}-${orderedQuestions.length}-${canvasSize.width}-${canvasSize.height}`}
             style={{ width: '100%', height: '100%' }}
             onInit={(instance) => {
               reactFlowRef.current = instance;
               fitCanvas();
             }}
             nodes={nodes}
-            edges={buildEdges()}
+            edges={edges}
             nodeTypes={FLOW_NODE_TYPES}
             onNodesChange={onNodesChange}
             onConnect={handleConnect}

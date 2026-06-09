@@ -29,6 +29,11 @@ from services.survey_access_service import (
 )
 
 router = APIRouter(prefix="/surveys", tags=["Опросы"])
+EDITABLE_SURVEY_STATUSES = (
+    SurveyStatus.DRAFT,
+    SurveyStatus.PUBLISHED,
+    SurveyStatus.ACTIVE,
+)
 
 
 @router.post(
@@ -236,11 +241,57 @@ async def get_survey(
     return response
 
 
+@router.post(
+    "/{survey_id}/archive",
+    response_model=SurveyResponseSchema,
+    summary="Архивация опроса",
+    description="Скрывает опрос из доступа сотрудников, оставляя его в HR-архиве.",
+)
+async def archive_survey(
+    survey_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_hr_role),
+):
+    """Archive a survey."""
+    result = await db.execute(
+        select(Survey)
+        .options(selectinload(Survey.questions), selectinload(Survey.responses))
+        .where(Survey.id == survey_id)
+    )
+    survey = result.scalar_one_or_none()
+
+    if not survey:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Опрос не найден.",
+        )
+
+    if survey.status == SurveyStatus.ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Опрос уже находится в архиве.",
+        )
+
+    survey.status = SurveyStatus.ARCHIVED
+    now = datetime.now(timezone.utc)
+    if not survey.ends_at or survey.ends_at > now:
+        survey.ends_at = now
+
+    await db.flush()
+    await db.refresh(survey)
+
+    response = SurveyResponseSchema.model_validate(survey)
+    response.responses_count = len([
+        r for r in survey.responses if r.completed_at is not None
+    ])
+    return response
+
+
 @router.put(
     "/{survey_id}",
     response_model=SurveyResponseSchema,
     summary="Обновление опроса",
-    description="Обновление опроса. Доступно только для HR и только для черновиков.",
+    description="Обновление опроса. Доступно только для HR для черновиков, опубликованных и активных опросов.",
 )
 async def update_survey(
     survey_id: int,
@@ -262,10 +313,10 @@ async def update_survey(
             detail="Опрос не найден.",
         )
 
-    if survey.status != SurveyStatus.DRAFT:
+    if survey.status not in EDITABLE_SURVEY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Можно редактировать только черновики.",
+            detail="Можно редактировать только черновики, опубликованные или активные опросы.",
         )
 
     # Обновляем только переданные поля

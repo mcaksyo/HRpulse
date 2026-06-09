@@ -6,16 +6,34 @@ from models.survey import Survey
 from models.user import User, UserRole
 
 
+def normalize_target_values(values: list | None) -> list[str]:
+    """Return a stripped list of non-empty audience values."""
+
+    if not values:
+        return []
+
+    normalized = []
+    for value in values:
+        item = str(value).strip()
+        if item:
+            normalized.append(item)
+
+    return normalized
+
+
 def user_matches_survey_audience(user: User, survey: Survey) -> bool:
     """Return whether the user belongs to the survey's target audience."""
     if user.role == UserRole.HR:
         return True
 
-    if survey.target_roles and user.role.value not in survey.target_roles:
+    target_roles = normalize_target_values(survey.target_roles)
+    target_departments = normalize_target_values(survey.target_departments)
+
+    if target_roles and user.role.value not in target_roles:
         return False
 
-    if survey.target_departments:
-        if not user.department or user.department not in survey.target_departments:
+    if target_departments:
+        if not user.department or user.department not in target_departments:
             return False
 
     return True

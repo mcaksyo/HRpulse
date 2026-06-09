@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CircleDashed, LoaderCircle, Megaphone, Plus } from 'lucide-react';
+import { Archive, CircleDashed, LoaderCircle, Megaphone, Plus, Trash2 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import Button from './Button.jsx';
 import Input from './Input.jsx';
+import MultiSelectDropdown from './MultiSelectDropdown.jsx';
 import SurveyFlowBuilder from './SurveyFlowBuilder.jsx';
 import { useToast } from '../hooks/useToast.jsx';
-import { questionsAPI, surveysAPI } from '../services/api.js';
+import { questionsAPI, surveysAPI, usersAPI } from '../services/api.js';
 
+const EDITABLE_SURVEY_STATUSES = new Set(['draft', 'published', 'active']);
 const BUILDER_QUESTION_TYPE_OPTIONS = [
   { value: 'single_choice', label: 'Одиночный выбор' },
   { value: 'multiple_choice', label: 'Множественный выбор' },
@@ -15,6 +17,28 @@ const BUILDER_QUESTION_TYPE_OPTIONS = [
   { value: 'matrix', label: 'Матричный вопрос' },
   { value: 'text', label: 'Текстовый ответ' },
 ];
+const EMPTY_SURVEY_FORM = {
+  title: '',
+  description: '',
+  anonymity: 'none',
+  estimatedMinutes: 5,
+  endsAt: '',
+  targetRoles: [],
+  targetDepartments: [],
+};
+const EMPTY_QUESTION_FORM = {
+  text: '',
+  type: 'single_choice',
+  options: '',
+  scaleMin: 1,
+  scaleMax: 10,
+  scaleMinLabel: 'Совсем нет',
+  scaleMaxLabel: 'Полностью да',
+  matrixRows: '',
+  matrixColumns: '',
+  required: true,
+  branchOnly: false,
+};
 
 function formatDate(value) {
   if (!value) {
@@ -32,24 +56,91 @@ function formatDate(value) {
   });
 }
 
+function getUniqueTrimmedLines(value) {
+  return [...new Set(
+    String(value || '')
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )];
+}
+
+function getUniqueValues(values) {
+  return [...new Set(
+    (Array.isArray(values) ? values : [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean),
+  )];
+}
+
 function getOrderedQuestions(survey) {
-  return [...(survey?.questions || [])].sort((left, right) => left.order_num - right.order_num);
+  const seen = new Set();
+
+  return [...(survey?.questions || [])]
+    .filter((question) => {
+      const questionId = String(question?.id ?? '');
+
+      if (!questionId || seen.has(questionId)) {
+        return false;
+      }
+
+      seen.add(questionId);
+      return true;
+    })
+    .sort((left, right) => left.order_num - right.order_num);
+}
+
+function getSurveyStatus(survey) {
+  return String(survey?.status || '').toLowerCase();
+}
+
+function isEditableSurveyStatus(status) {
+  return EDITABLE_SURVEY_STATUSES.has(String(status || '').toLowerCase());
+}
+
+function toDateTimeLocalValue(value) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const pad = (item) => String(item).padStart(2, '0');
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function buildSurveyFormState(survey) {
+  if (!survey) {
+    return { ...EMPTY_SURVEY_FORM };
+  }
+
+  return {
+    title: survey.title || '',
+    description: survey.description || '',
+    anonymity: survey.anonymity || 'none',
+    estimatedMinutes: survey.estimated_minutes || 5,
+    endsAt: toDateTimeLocalValue(survey.ends_at),
+    targetRoles: Array.isArray(survey.target_roles) ? [...survey.target_roles] : [],
+    targetDepartments: Array.isArray(survey.target_departments) ? [...survey.target_departments] : [],
+  };
 }
 
 function buildSurveyPayload(form) {
+  const targetRoles = getUniqueValues(form.targetRoles);
+  const targetDepartments = getUniqueValues(form.targetDepartments);
+
   return {
     title: form.title,
     description: form.description,
     anonymity: form.anonymity,
     estimated_minutes: Number(form.estimatedMinutes || 5),
     ends_at: form.endsAt ? new Date(form.endsAt).toISOString() : null,
-    target_roles: form.targetRoles ? [form.targetRoles] : null,
-    target_departments: form.targetDepartments
-      ? form.targetDepartments
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : null,
+    target_roles: targetRoles.length ? targetRoles : null,
+    target_departments: targetDepartments.length ? targetDepartments : null,
   };
 }
 
@@ -58,13 +149,11 @@ function buildQuestionPayload(form) {
     text: form.text,
     type: form.type,
     required: form.required,
+    branch_only: form.branchOnly,
   };
 
   if (form.type === 'single_choice' || form.type === 'multiple_choice') {
-    payload.options = form.options
-      .split('\n')
-      .map((item) => item.trim())
-      .filter(Boolean);
+    payload.options = getUniqueTrimmedLines(form.options);
   }
 
   if (form.type === 'scale' || form.type === 'rating') {
@@ -76,14 +165,8 @@ function buildQuestionPayload(form) {
 
   if (form.type === 'matrix') {
     payload.options = {
-      rows: form.matrixRows
-        .split('\n')
-        .map((item) => item.trim())
-        .filter(Boolean),
-      columns: form.matrixColumns
-        .split('\n')
-        .map((item) => item.trim())
-        .filter(Boolean),
+      rows: getUniqueTrimmedLines(form.matrixRows),
+      columns: getUniqueTrimmedLines(form.matrixColumns),
     };
   }
 
@@ -118,6 +201,20 @@ function getAnonymityDescription(mode) {
   return 'HR видит, кто именно ответил, и может выгружать ответы с именем и отделом сотрудника.';
 }
 
+function getRoleOptionLabel(role) {
+  const normalized = String(role || '').toLowerCase();
+
+  if (normalized === 'employee') {
+    return 'Сотрудники';
+  }
+
+  if (normalized === 'hr') {
+    return 'HR';
+  }
+
+  return role;
+}
+
 function InlineLoader({ label }) {
   return (
     <div className="page-loader page-loader--compact">
@@ -141,50 +238,53 @@ export default function VisualBuilderPage() {
   const { success, error } = useToast();
   const location = useLocation();
   const initialSurveyId = new URLSearchParams(location.search).get('survey');
-  const [drafts, setDrafts] = useState([]);
-  const [selectedSurveyId, setSelectedSurveyId] = useState(initialSurveyId ? Number(initialSurveyId) : null);
+  const initialSurveyIdValue = initialSurveyId ? Number(initialSurveyId) : null;
+  const [editableSurveys, setEditableSurveys] = useState([]);
+  const [selectedSurveyId, setSelectedSurveyId] = useState(initialSurveyIdValue);
   const [selectedSurvey, setSelectedSurvey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [savingSurvey, setSavingSurvey] = useState(false);
   const [savingQuestion, setSavingQuestion] = useState(false);
-  const [surveyForm, setSurveyForm] = useState({
-    title: '',
-    description: '',
-    anonymity: 'none',
-    estimatedMinutes: 5,
-    endsAt: '',
-    targetRoles: '',
-    targetDepartments: '',
+  const [loadingAudienceOptions, setLoadingAudienceOptions] = useState(true);
+  const [audienceOptions, setAudienceOptions] = useState({
+    roles: [],
+    departments: [],
   });
-  const [questionForm, setQuestionForm] = useState({
-    text: '',
-    type: 'single_choice',
-    options: '',
-    scaleMin: 1,
-    scaleMax: 10,
-    scaleMinLabel: 'Совсем нет',
-    scaleMaxLabel: 'Полностью да',
-    matrixRows: '',
-    matrixColumns: '',
-    required: true,
-  });
+  const [surveyForm, setSurveyForm] = useState(EMPTY_SURVEY_FORM);
+  const [questionForm, setQuestionForm] = useState(EMPTY_QUESTION_FORM);
 
-  const loadDrafts = useCallback(async (preserveSelected = true, currentSelectedId = null) => {
+  const loadEditableSurveys = useCallback(async (preserveSelected = true, currentSelectedId = null) => {
     setLoading(true);
     try {
-      const response = await surveysAPI.list({ status: 'draft', per_page: 50 });
-      setDrafts(response.items || []);
+      const response = await surveysAPI.list({ per_page: 50 });
+      const items = (response.items || []).filter((survey) => isEditableSurveyStatus(survey.status));
+      setEditableSurveys(items);
 
       const nextId =
-        preserveSelected && currentSelectedId
+        preserveSelected && currentSelectedId && items.some((survey) => survey.id === currentSelectedId)
           ? currentSelectedId
-          : response.items?.[0]?.id || null;
+          : items[0]?.id || null;
 
       setSelectedSurveyId(nextId);
     } catch (loadError) {
-      error(loadError.message || 'Не удалось загрузить черновики.');
+      error(loadError.message || 'Не удалось загрузить опросы для редактирования.');
     } finally {
       setLoading(false);
+    }
+  }, [error]);
+
+  const loadAudienceOptions = useCallback(async () => {
+    setLoadingAudienceOptions(true);
+    try {
+      const response = await usersAPI.audienceOptions();
+      setAudienceOptions({
+        roles: Array.isArray(response?.roles) ? response.roles : [],
+        departments: Array.isArray(response?.departments) ? response.departments : [],
+      });
+    } catch (loadError) {
+      error(loadError.message || 'Не удалось загрузить роли и подразделения для аудитории опроса.');
+    } finally {
+      setLoadingAudienceOptions(false);
     }
   }, [error]);
 
@@ -200,8 +300,12 @@ export default function VisualBuilderPage() {
   }
 
   useEffect(() => {
-    loadDrafts(false);
-  }, [loadDrafts]);
+    loadEditableSurveys(Boolean(initialSurveyIdValue), initialSurveyIdValue);
+  }, [initialSurveyIdValue, loadEditableSurveys]);
+
+  useEffect(() => {
+    loadAudienceOptions();
+  }, [loadAudienceOptions]);
 
   useEffect(() => {
     let active = true;
@@ -216,10 +320,11 @@ export default function VisualBuilderPage() {
         const survey = await surveysAPI.get(selectedSurveyId);
         if (active) {
           setSelectedSurvey(survey);
+          setSurveyForm(buildSurveyFormState(survey));
         }
       } catch (loadError) {
         if (active) {
-          error(loadError.message || 'Не удалось открыть выбранный черновик.');
+          error(loadError.message || 'Не удалось открыть выбранный опрос.');
         }
       }
     }
@@ -231,26 +336,30 @@ export default function VisualBuilderPage() {
     };
   }, [error, selectedSurveyId]);
 
-  async function createSurvey(event) {
+  async function saveSurvey(event) {
     event.preventDefault();
     setSavingSurvey(true);
 
     try {
-      const created = await surveysAPI.create(buildSurveyPayload(surveyForm));
-      success('Черновик создан. Можно наполнять его вопросами.');
-      setSurveyForm({
-        title: '',
-        description: '',
-        anonymity: 'none',
-        estimatedMinutes: 5,
-        endsAt: '',
-        targetRoles: '',
-        targetDepartments: '',
-      });
-      await loadDrafts(false);
-      setSelectedSurveyId(created.id);
+      if (selectedSurvey && !isEditableSurveyStatus(selectedSurvey.status)) {
+        error('Этот опрос сейчас доступен только для просмотра.');
+        return;
+      }
+
+      if (selectedSurvey && isEditableSurveyStatus(selectedSurvey.status)) {
+        await surveysAPI.update(selectedSurveyId, buildSurveyPayload(surveyForm));
+        success('Опрос обновлён. Изменения сохранены.');
+        await refreshSelectedSurvey(selectedSurveyId);
+        await loadEditableSurveys(true, selectedSurveyId);
+      } else {
+        const created = await surveysAPI.create(buildSurveyPayload(surveyForm));
+        success('Черновик создан. Можно наполнять его вопросами.');
+        setSurveyForm({ ...EMPTY_SURVEY_FORM });
+        await loadEditableSurveys(false);
+        setSelectedSurveyId(created.id);
+      }
     } catch (saveError) {
-      error(saveError.message || 'Не удалось создать опрос.');
+      error(saveError.message || 'Не удалось сохранить опрос.');
     } finally {
       setSavingSurvey(false);
     }
@@ -259,7 +368,12 @@ export default function VisualBuilderPage() {
   async function createQuestion(event) {
     event.preventDefault();
     if (!selectedSurveyId) {
-      error('Сначала создайте или выберите черновик.');
+      error('Сначала создайте или выберите опрос.');
+      return;
+    }
+
+    if (!canEditSelectedSurvey) {
+      error('Этот опрос сейчас недоступен для редактирования.');
       return;
     }
 
@@ -268,20 +382,9 @@ export default function VisualBuilderPage() {
     try {
       await questionsAPI.create(selectedSurveyId, buildQuestionPayload(questionForm));
       success('Вопрос добавлен.');
-      setQuestionForm({
-        text: '',
-        type: 'single_choice',
-        options: '',
-        scaleMin: 1,
-        scaleMax: 10,
-        scaleMinLabel: 'Совсем нет',
-        scaleMaxLabel: 'Полностью да',
-        matrixRows: '',
-        matrixColumns: '',
-        required: true,
-      });
+      setQuestionForm({ ...EMPTY_QUESTION_FORM });
       await refreshSelectedSurvey(selectedSurveyId);
-      await loadDrafts(true, selectedSurveyId);
+      await loadEditableSurveys(true, selectedSurveyId);
     } catch (saveError) {
       error(saveError.message || 'Не удалось добавить вопрос.');
     } finally {
@@ -297,9 +400,8 @@ export default function VisualBuilderPage() {
     try {
       await surveysAPI.publish(selectedSurveyId);
       success('Опрос опубликован, каскад уведомлений запущен.');
-      await loadDrafts(false);
-      setSelectedSurvey(null);
-      setSelectedSurveyId(null);
+      await refreshSelectedSurvey(selectedSurveyId);
+      await loadEditableSurveys(true, selectedSurveyId);
     } catch (publishError) {
       error(publishError.message || 'Не удалось опубликовать опрос.');
     }
@@ -319,7 +421,69 @@ export default function VisualBuilderPage() {
     }
   }
 
+  async function archiveSelectedSurvey() {
+    if (!selectedSurveyId || !selectedSurvey) {
+      return;
+    }
+
+    if (!window.confirm(`Скрыть опрос "${selectedSurvey.title}"? Он пропадёт из доступа сотрудников и уйдёт в архив.`)) {
+      return;
+    }
+
+    try {
+      await surveysAPI.archive(selectedSurveyId);
+      success('Опрос скрыт и перемещён в архив.');
+      setSelectedSurvey(null);
+      setSelectedSurveyId(null);
+      setSurveyForm({ ...EMPTY_SURVEY_FORM });
+      setQuestionForm({ ...EMPTY_QUESTION_FORM });
+      await loadEditableSurveys(false);
+    } catch (archiveError) {
+      error(archiveError.message || 'Не удалось скрыть опрос.');
+    }
+  }
+
+  async function deleteSelectedSurvey() {
+    if (!selectedSurveyId || !selectedSurvey) {
+      return;
+    }
+
+    if (!window.confirm(`Удалить опрос "${selectedSurvey.title}" полностью? Это действие необратимо.`)) {
+      return;
+    }
+
+    try {
+      await surveysAPI.remove(selectedSurveyId);
+      success('Опрос удалён.');
+      setSelectedSurvey(null);
+      setSelectedSurveyId(null);
+      setSurveyForm({ ...EMPTY_SURVEY_FORM });
+      setQuestionForm({ ...EMPTY_QUESTION_FORM });
+      await loadEditableSurveys(false);
+    } catch (deleteError) {
+      error(deleteError.message || 'Не удалось удалить опрос.');
+    }
+  }
+
+  function startNewSurveyDraft() {
+    setSelectedSurvey(null);
+    setSelectedSurveyId(null);
+    setSurveyForm({ ...EMPTY_SURVEY_FORM });
+    setQuestionForm({ ...EMPTY_QUESTION_FORM });
+  }
+
+  const selectedSurveyStatus = getSurveyStatus(selectedSurvey);
+  const canEditSelectedSurvey = selectedSurvey ? isEditableSurveyStatus(selectedSurveyStatus) : false;
+  const canPublishSelectedSurvey = selectedSurveyStatus === 'draft';
   const selectedQuestions = selectedSurvey ? getOrderedQuestions(selectedSurvey) : [];
+  const roleOptions = audienceOptions.roles.map((role) => ({
+    value: role,
+    label: getRoleOptionLabel(role),
+  }));
+  const departmentOptions = audienceOptions.departments.map((department) => ({
+    value: department,
+    label: department,
+  }));
 
   return (
     <div className="page-stack">
@@ -329,11 +493,23 @@ export default function VisualBuilderPage() {
             <span className="panel__eyebrow">Конструктор опросов</span>
             <h2>Карточки вопросов, стрелки переходов и живой сценарий на одном холсте</h2>
           </div>
-          {selectedSurvey ? (
-            <Button icon={Megaphone} onClick={publishSurvey}>
-              Опубликовать черновик
-            </Button>
-          ) : null}
+          <div className="header-actions">
+            {canPublishSelectedSurvey ? (
+              <Button icon={Megaphone} onClick={publishSurvey}>
+                Опубликовать черновик
+              </Button>
+            ) : null}
+            {selectedSurvey ? (
+              <Button variant="secondary" icon={Archive} onClick={archiveSelectedSurvey}>
+                Скрыть
+              </Button>
+            ) : null}
+            {selectedSurvey ? (
+              <Button variant="danger" icon={Trash2} onClick={deleteSelectedSurvey}>
+                Удалить
+              </Button>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -341,15 +517,17 @@ export default function VisualBuilderPage() {
         <div className="panel">
           <div className="panel__header">
             <div>
-              <span className="panel__eyebrow">Создание черновика</span>
-              <h3>Параметры опроса</h3>
+              <span className="panel__eyebrow">
+                {canEditSelectedSurvey ? 'Редактирование опроса' : 'Создание черновика'}
+              </span>
+              <h3>{canEditSelectedSurvey ? 'Параметры выбранного опроса' : 'Параметры опроса'}</h3>
             </div>
           </div>
           <div className="builder-note builder-note--inline">
             <strong>{getAnonymityTitle(surveyForm.anonymity)}</strong>
             <p>{getAnonymityDescription(surveyForm.anonymity)}</p>
           </div>
-          <form className="form-grid" onSubmit={createSurvey}>
+          <form className="form-grid" onSubmit={saveSurvey}>
             <Input
               label="Название"
               value={surveyForm.title}
@@ -406,7 +584,7 @@ export default function VisualBuilderPage() {
               />
             </label>
             <Input
-              label="Целевая роль"
+              label="Целевые роли через запятую"
               value={surveyForm.targetRoles}
               onChange={(event) =>
                 setSurveyForm((current) => ({ ...current, targetRoles: event.target.value }))
@@ -426,24 +604,40 @@ export default function VisualBuilderPage() {
               placeholder="Розница, Офис, HR"
               fullWidth
             />
-            <Button type="submit" loading={savingSurvey} icon={Plus}>
-              Создать черновик
+            <div className="builder-note">
+              <strong>Пустая аудитория = рассылка всем</strong>
+              <p>
+                Если не заполнять роли и подразделения, опубликованный опрос сразу уйдёт всей
+                доступной аудитории компании.
+              </p>
+            </div>
+            <Button
+              type="submit"
+              loading={savingSurvey}
+              icon={canEditSelectedSurvey ? undefined : Plus}
+            >
+              {canEditSelectedSurvey ? 'Сохранить изменения' : 'Создать черновик'}
             </Button>
+            {canEditSelectedSurvey ? (
+              <Button type="button" variant="secondary" onClick={startNewSurveyDraft}>
+                Новый черновик
+              </Button>
+            ) : null}
           </form>
         </div>
 
         <div className="panel">
           <div className="panel__header">
             <div>
-              <span className="panel__eyebrow">Черновики</span>
-              <h3>Текущие заготовки</h3>
+              <span className="panel__eyebrow">Опросы</span>
+              <h3>Доступные для редактирования</h3>
             </div>
           </div>
           {loading ? (
-            <InlineLoader label="Загружаем черновики..." />
+            <InlineLoader label="Загружаем опросы..." />
           ) : (
             <div className="draft-list">
-              {drafts.map((draft) => (
+              {editableSurveys.map((draft) => (
                 <button
                   type="button"
                   key={draft.id}
@@ -451,14 +645,15 @@ export default function VisualBuilderPage() {
                   onClick={() => setSelectedSurveyId(draft.id)}
                 >
                   <strong>{draft.title}</strong>
+                  <span>{draft.status === 'draft' ? 'Черновик' : draft.status === 'published' ? 'Опубликован' : 'Активен'}</span>
                   <span>{draft.responses_count || 0} ответов</span>
                   <small>до {formatDate(draft.ends_at)}</small>
                 </button>
               ))}
-              {!drafts.length ? (
+              {!editableSurveys.length ? (
                 <CompactEmptyState
-                  title="Черновиков пока нет"
-                  description="Создайте первый шаблон слева, и он появится здесь."
+                  title="Редактируемых опросов пока нет"
+                  description="Создайте первый опрос слева, и он появится здесь."
                 />
               ) : null}
             </div>
@@ -471,7 +666,7 @@ export default function VisualBuilderPage() {
           <div className="panel__header">
             <div>
               <span className="panel__eyebrow">Новый вопрос</span>
-              <h3>Наполнение черновика</h3>
+              <h3>{selectedSurvey ? 'Наполнение выбранного опроса' : 'Наполнение опроса'}</h3>
             </div>
           </div>
           <form className="form-grid" onSubmit={createQuestion}>
@@ -507,6 +702,20 @@ export default function VisualBuilderPage() {
                 }
               />
               <span>Обязательный вопрос</span>
+            </label>
+
+            <label className="field field--checkbox">
+              <input
+                type="checkbox"
+                checked={questionForm.branchOnly}
+                onChange={(event) =>
+                  setQuestionForm((current) => ({
+                    ...current,
+                    branchOnly: event.target.checked,
+                  }))
+                }
+              />
+              <span>Только по ветке</span>
             </label>
 
             {questionForm.type === 'single_choice' || questionForm.type === 'multiple_choice' ? (
@@ -600,8 +809,12 @@ export default function VisualBuilderPage() {
                 Двигайте карточки в пространстве, а стрелки тяните от конкретных ответов к нужным
                 шагам сценария.
               </p>
+              <p>
+                Вопросы с режимом "Только по ветке" не попадают в общий поток и открываются
+                только по стрелке от нужного ответа.
+              </p>
             </div>
-            <Button type="submit" loading={savingQuestion} icon={Plus}>
+            <Button type="submit" loading={savingQuestion} icon={Plus} disabled={!canEditSelectedSurvey}>
               Добавить вопрос
             </Button>
           </form>
@@ -611,7 +824,7 @@ export default function VisualBuilderPage() {
           <div className="panel__header">
             <div>
               <span className="panel__eyebrow">Текущий сценарий</span>
-              <h3>{selectedSurvey?.title || 'Выберите черновик'}</h3>
+              <h3>{selectedSurvey?.title || 'Выберите опрос'}</h3>
             </div>
           </div>
           {selectedSurvey ? (
@@ -630,7 +843,12 @@ export default function VisualBuilderPage() {
                       <div className="question-list__index">{index + 1}</div>
                       <div className="question-list__content">
                         <strong>{question.text}</strong>
-                        <p>{BUILDER_QUESTION_TYPE_OPTIONS.find((item) => item.value === question.type)?.label || question.type}</p>
+                        <div className="question-list__meta">
+                          <p>{BUILDER_QUESTION_TYPE_OPTIONS.find((item) => item.value === question.type)?.label || question.type}</p>
+                          {question.branch_only || question.branchOnly ? (
+                            <span className="question-list__badge">Только по ветке</span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -644,7 +862,7 @@ export default function VisualBuilderPage() {
             </>
           ) : (
             <CompactEmptyState
-              title="Черновик не выбран"
+              title="Опрос не выбран"
               description="Сначала выберите опрос из списка справа."
             />
           )}
@@ -655,7 +873,7 @@ export default function VisualBuilderPage() {
         <div className="panel__header">
           <div>
             <span className="panel__eyebrow">Редактор опросов</span>
-            <h3>{selectedSurvey?.title || 'Выберите черновик для редактирования'}</h3>
+            <h3>{selectedSurvey?.title || 'Выберите опрос для редактирования'}</h3>
           </div>
         </div>
         {selectedSurvey ? (
@@ -676,7 +894,7 @@ export default function VisualBuilderPage() {
           )
         ) : (
           <CompactEmptyState
-            title="Нет активного черновика"
+            title="Нет активного опроса"
             description="Сначала выберите или создайте опрос, после этого откроется редактор."
           />
         )}

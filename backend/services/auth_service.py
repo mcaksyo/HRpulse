@@ -52,20 +52,17 @@ async def send_otp(phone: str) -> str:
     rate_key = f"otp_rate:{phone}"
     existing_code = await redis_client.get(otp_key)
 
-    if await redis_client.exists(rate_key) and existing_code:
+    # Для MVP повторный запрос не должен ломать логин:
+    # пока код жив, просто возвращаем его повторно и продлеваем throttle-окно.
+    if existing_code:
+        await redis_client.setex(rate_key, settings.OTP_RATE_LIMIT_SECONDS, "1")
+        await redis_client.delete(f"otp_attempts:{phone}")
         print(f"Repeat OTP request for {phone}, returning active code")
         return existing_code
 
-    if await redis_client.exists(rate_key) and not existing_code:
-        await redis_client.delete(rate_key)
-
-    # Проверка rate limit
-    rate_key = f"otp_rate:{phone}"
+    # Если код уже истёк, снимаем старый rate-limit и выдаём новый без 429.
     if await redis_client.exists(rate_key):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Слишком частые запросы. Подождите минуту.",
-        )
+        await redis_client.delete(rate_key)
 
     # Генерация OTP
     code = generate_otp(settings.OTP_LENGTH)
@@ -74,7 +71,7 @@ async def send_otp(phone: str) -> str:
     otp_key = f"otp:{phone}"
     await redis_client.setex(otp_key, settings.OTP_TTL_SECONDS, code)
 
-    # Rate limit — 1 запрос в минуту
+    # Мягкий throttle на случай шквала запросов, без блокировки повторной выдачи кода
     await redis_client.setex(rate_key, settings.OTP_RATE_LIMIT_SECONDS, "1")
 
     # Счётчик неудачных попыток

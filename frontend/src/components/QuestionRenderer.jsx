@@ -1,5 +1,13 @@
 import './QuestionRenderer.css';
 
+function getUniqueOptions(options) {
+  return [...new Set(
+    (Array.isArray(options) ? options : [])
+      .map((item) => String(item).trim())
+      .filter(Boolean),
+  )];
+}
+
 export default function QuestionRenderer({ question, value, onChange }) {
   const {
     type,
@@ -11,13 +19,14 @@ export default function QuestionRenderer({ question, value, onChange }) {
     rows,
     columns,
   } = question;
+  const normalizedOptions = getUniqueOptions(options);
 
   switch (type) {
     case 'single':
       return (
         <div className="question-renderer">
           <div className="question-options">
-            {options?.map((opt, idx) => (
+            {normalizedOptions.map((opt, idx) => (
               <label key={idx} className={`question-option ${value === opt ? 'question-option--selected' : ''}`}>
                 <input
                   type="radio"
@@ -39,7 +48,7 @@ export default function QuestionRenderer({ question, value, onChange }) {
       return (
         <div className="question-renderer">
           <div className="question-options">
-            {options?.map((opt, idx) => {
+            {normalizedOptions.map((opt, idx) => {
               const selected = Array.isArray(value) && value.includes(opt);
               return (
                 <label key={idx} className={`question-option ${selected ? 'question-option--selected' : ''}`}>

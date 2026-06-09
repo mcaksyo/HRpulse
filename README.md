@@ -99,7 +99,7 @@ docker compose logs -f postgres
 
 ## Тестовые аккаунты
 
-Для локального Docker-стенда доступны тестовые пользователи:
+Для локального Docker-стенда доступны тестовые пользователи (можно использовать любые номера):
 
 - HR: `+7 900 123-45-67`
 - Сотрудник: `+7 900 123-45-68`
@@ -135,8 +135,6 @@ docker compose logs -f
 ```
 
 ## Локальный запуск без Docker
-
-Этот вариант нужен только для разработки. Для демо и сдачи лучше использовать Docker Compose.
 
 ### Backend
 
@@ -225,65 +223,22 @@ HACKATON/
 - проходит опросы;
 - управляет настройками уведомлений.
 
-## Частые проблемы
-
-### `docker compose` не отвечает
-
-Проверьте, что открыт `Docker Desktop` и движок успел подняться.
-
-Проверка:
-
-```bash
-docker version
-```
-
-### Не открывается frontend
-
-Проверьте, что контейнер `frontend` в статусе `Up`:
-
-```bash
-docker compose ps
-```
-
-Если нужно, перезапустите его:
-
-```bash
-docker compose restart frontend
-```
-
-### Backend не видит базу
-
-Проверьте `health`:
-
-```bash
-Invoke-RestMethod http://localhost:8000/health
-```
-
-И убедитесь, что контейнер `postgres` healthy:
-
-```bash
-docker compose ps
-```
-
 ## Состав команды
 
-Заполнить перед сдачей:
-
-| Роль | ФИО | Зона ответственности |
-|------|-----|----------------------|
-| Team Lead | TODO | TODO |
-| Backend | TODO | TODO |
-| Frontend | TODO | TODO |
-| Design / Analytics | TODO | TODO |
+| Роль | ФИО |
+|------|-----|
+| Team Lead | Самиков Марк Радикович |
+| Backend | Яныбин Владлен Юрьевич |
+| Frontend | Абрахманов Артем Амирович |
+| Design / Analytics | Кумушбаева Гузель Айдаровна |
+| Design / Analytics | Газизова Диана Флюровна |
 
 ## Контактные данные
 
-Заполнить перед сдачей:
-
-- Telegram: `TODO`
-- Email: `TODO`
-- Телефон: `TODO`
-- GitHub / GitLab: `TODO`
+- Telegram: `@Dorogo_kapec2`
+- Email: `samikov05@bk.ru`
+- Телефон: `+79378393881`
+- GitHub / GitLab: `https://github.com/mcaksyo/HRpulse`
 
 ## Статус проекта
 

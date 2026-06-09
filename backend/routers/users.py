@@ -98,6 +98,46 @@ async def list_users(
 
 
 @router.get(
+    "/audience-options",
+    summary="Audience options",
+    description="Returns existing roles and departments for survey audience selection.",
+)
+async def get_audience_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_hr_role),
+):
+    """Return distinct roles and departments for survey audience selection."""
+    role_result = await db.execute(
+        select(User.role).where(User.is_active == True).distinct()  # noqa: E712
+    )
+    department_result = await db.execute(
+        select(User.department)
+        .where(User.is_active == True, User.department.is_not(None))  # noqa: E712
+        .distinct()
+    )
+
+    roles = sorted(
+        {
+            role.value if isinstance(role, UserRole) else str(role)
+            for role in role_result.scalars().all()
+            if role
+        }
+    )
+    departments = sorted(
+        {
+            department.strip()
+            for department in department_result.scalars().all()
+            if isinstance(department, str) and department.strip()
+        }
+    )
+
+    return {
+        "roles": roles,
+        "departments": departments,
+    }
+
+
+@router.get(
     "/{user_id}",
     response_model=UserResponse,
     summary="Получение пользователя",

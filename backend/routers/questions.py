@@ -22,6 +22,11 @@ from services.auth_service import get_current_user, require_hr_role
 from services.survey_access_service import ensure_user_can_access_survey
 
 router = APIRouter(prefix="/surveys/{survey_id}/questions", tags=["Вопросы"])
+EDITABLE_SURVEY_STATUSES = (
+    SurveyStatus.DRAFT,
+    SurveyStatus.PUBLISHED,
+    SurveyStatus.ACTIVE,
+)
 
 
 async def _get_survey_or_404(
@@ -83,10 +88,10 @@ async def create_question(
     """Создание нового вопроса."""
     survey = await _get_survey_or_404(db, survey_id)
 
-    if survey.status != SurveyStatus.DRAFT:
+    if survey.status not in EDITABLE_SURVEY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Можно добавлять вопросы только в черновик.",
+            detail="Можно изменять вопросы только в черновике, опубликованном или активном опросе.",
         )
 
     # Определяем порядковый номер
@@ -111,6 +116,7 @@ async def create_question(
         scale_min_label=data.scale_min_label,
         scale_max_label=data.scale_max_label,
         required=data.required,
+        branch_only=data.branch_only,
     )
     db.add(question)
     await db.flush()
@@ -172,10 +178,10 @@ async def update_question(
     """Обновление вопроса."""
     survey = await _get_survey_or_404(db, survey_id)
 
-    if survey.status != SurveyStatus.DRAFT:
+    if survey.status not in EDITABLE_SURVEY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Можно редактировать вопросы только в черновике.",
+            detail="Можно редактировать вопросы только в черновике, опубликованном или активном опросе.",
         )
 
     result = await db.execute(
@@ -224,10 +230,10 @@ async def delete_question(
     """Удаление вопроса."""
     survey = await _get_survey_or_404(db, survey_id)
 
-    if survey.status != SurveyStatus.DRAFT:
+    if survey.status not in EDITABLE_SURVEY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Можно удалять вопросы только из черновика.",
+            detail="Можно удалять вопросы только из черновика, опубликованного или активного опроса.",
         )
 
     result = await db.execute(
@@ -263,10 +269,10 @@ async def reorder_questions(
     """Изменение порядка вопросов."""
     survey = await _get_survey_or_404(db, survey_id)
 
-    if survey.status != SurveyStatus.DRAFT:
+    if survey.status not in EDITABLE_SURVEY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Можно менять порядок только в черновике.",
+            detail="Можно менять порядок только в черновике, опубликованном или активном опросе.",
         )
 
     # Проверяем, что все ID принадлежат этому опросу

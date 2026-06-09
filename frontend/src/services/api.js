@@ -180,6 +180,10 @@ export const surveysAPI = {
     request(`/surveys/${surveyId}/publish`, {
       method: 'POST',
     }),
+  archive: (surveyId) =>
+    request(`/surveys/${surveyId}/archive`, {
+      method: 'POST',
+    }),
   close: (surveyId) =>
     request(`/surveys/${surveyId}/close`, {
       method: 'POST',
@@ -265,6 +269,7 @@ export const usersAPI = {
       method: 'PUT',
       body: data,
     }),
+  audienceOptions: () => request('/users/audience-options'),
   list: (params) => request(`/users/${buildQuery(params)}`),
 };
 

@@ -1,6 +1,4 @@
-"""
-Схемы вопросов.
-"""
+"""Question schemas."""
 
 from typing import Any, Optional
 
@@ -10,37 +8,51 @@ from models.question import QuestionType
 
 
 class BranchRule(BaseModel):
-    """Правило ветвления вопроса."""
+    """Branching rule for a survey question."""
+
     condition_question_id: Optional[int] = Field(
-        None, description="ID вопроса-условия"
+        None,
+        description="ID вопроса-условия",
     )
-    condition_value: Any = Field(None, description="Значение для срабатывания условия")
+    condition_value: Any = Field(
+        None,
+        description="Значение ответа, при котором срабатывает правило",
+    )
     action: str = Field(
-        "skip_to", description="Действие: skip_to, hide, show"
+        "skip_to",
+        description="Действие: skip_to, hide, show",
     )
     target_question_id: Optional[int] = Field(
-        None, description="ID целевого вопроса"
+        None,
+        description="ID целевого вопроса",
     )
 
 
 class QuestionCreate(BaseModel):
-    """Схема создания вопроса."""
+    """Schema for creating a question."""
+
     text: str = Field(..., min_length=1, description="Текст вопроса")
     type: QuestionType = Field(..., description="Тип вопроса")
     order_num: int = Field(0, ge=0, description="Порядковый номер")
-    options: Optional[Any] = Field(None, description="Answer options or matrix config")
+    options: Optional[Any] = Field(None, description="Варианты ответа или конфиг матрицы")
     branch_rules: Optional[list[BranchRule]] = Field(
-        None, description="Правила ветвления"
+        None,
+        description="Правила ветвления",
     )
     scale_min: Optional[int] = Field(None, description="Минимум шкалы")
     scale_max: Optional[int] = Field(None, description="Максимум шкалы")
     scale_min_label: Optional[str] = Field(None, description="Подпись минимума")
     scale_max_label: Optional[str] = Field(None, description="Подпись максимума")
     required: bool = Field(True, description="Обязательный вопрос")
+    branch_only: bool = Field(
+        False,
+        description="Вопрос показывается только при переходе по ветке",
+    )
 
 
 class QuestionUpdate(BaseModel):
-    """Схема обновления вопроса."""
+    """Schema for updating a question."""
+
     text: Optional[str] = Field(None, min_length=1)
     type: Optional[QuestionType] = None
     order_num: Optional[int] = Field(None, ge=0)
@@ -51,10 +63,12 @@ class QuestionUpdate(BaseModel):
     scale_min_label: Optional[str] = None
     scale_max_label: Optional[str] = None
     required: Optional[bool] = None
+    branch_only: Optional[bool] = None
 
 
 class QuestionResponse(BaseModel):
-    """Схема ответа с данными вопроса."""
+    """Schema returned for a survey question."""
+
     id: int
     survey_id: int
     order_num: int
@@ -67,12 +81,15 @@ class QuestionResponse(BaseModel):
     scale_min_label: Optional[str] = None
     scale_max_label: Optional[str] = None
     required: bool
+    branch_only: bool = False
 
     model_config = {"from_attributes": True}
 
 
 class QuestionReorder(BaseModel):
-    """Схема для изменения порядка вопросов."""
+    """Schema for reordering questions inside a survey."""
+
     question_ids: list[int] = Field(
-        ..., description="Список ID вопросов в новом порядке"
+        ...,
+        description="Список ID вопросов в новом порядке",
     )

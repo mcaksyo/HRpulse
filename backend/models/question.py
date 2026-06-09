@@ -60,6 +60,7 @@ class Question(Base):
     scale_max_label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     required: Mapped[bool] = mapped_column(Boolean, default=True)
+    branch_only: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Связи
     survey: Mapped["Survey"] = relationship(  # noqa: F821

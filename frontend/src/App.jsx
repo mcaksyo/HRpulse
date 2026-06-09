@@ -74,6 +74,7 @@ const STATUS_META = {
   closed: { badge: 'completed', label: 'Завершён' },
   archived: { badge: 'archived', label: 'Архив' },
 };
+const BUILDER_EDITABLE_STATUSES = new Set(['draft', 'published', 'active']);
 
 const SKIP_BRANCH_VALUE = 'Пропустить вопрос';
 
@@ -147,6 +148,10 @@ function normalizeQuestionType(type) {
 
 function normalizeStatus(status) {
   return STATUS_META[String(status || '').toLowerCase()] || STATUS_META.active;
+}
+
+function canOpenBuilderForSurvey(survey) {
+  return BUILDER_EDITABLE_STATUSES.has(String(survey?.status || '').toLowerCase());
 }
 
 function getDisplayName(user) {
@@ -226,6 +231,7 @@ function normalizeQuestion(question) {
 
   return {
     ...question,
+    branchOnly: Boolean(question?.branch_only ?? question?.branchOnly),
     type: normalizeQuestionType(question.type),
     rows: question.rows || matrixOptions.rows || [],
     columns: question.columns || matrixOptions.columns || [],
@@ -234,6 +240,10 @@ function normalizeQuestion(question) {
     scaleMinLabel: question.scale_min_label ?? question.scaleMinLabel ?? 'Совсем нет',
     scaleMaxLabel: question.scale_max_label ?? question.scaleMaxLabel ?? 'Полностью да',
   };
+}
+
+function isBranchOnlyQuestion(question) {
+  return Boolean(question?.branchOnly ?? question?.branch_only);
 }
 
 function getOrderedQuestions(survey) {
@@ -246,6 +256,8 @@ function getVisibleQuestions(orderedQuestions, answers) {
   const questionIds = new Set(orderedQuestions.map((question) => question.id));
   const showTargets = new Set();
   const shownTargets = new Set();
+  const branchTargets = new Set();
+  const activeBranchTargets = new Set();
   const hiddenTargets = new Set();
 
   orderedQuestions.forEach((question) => {
@@ -261,9 +273,16 @@ function getVisibleQuestions(orderedQuestions, answers) {
 
       if (action === 'show') {
         showTargets.add(rule.target_question_id);
+        branchTargets.add(rule.target_question_id);
         if (matches) {
           shownTargets.add(rule.target_question_id);
+          activeBranchTargets.add(rule.target_question_id);
         }
+      }
+
+      if (action === 'skip_to' && matches) {
+        branchTargets.add(rule.target_question_id);
+        activeBranchTargets.add(rule.target_question_id);
       }
 
       if (action === 'hide' && matches) {
@@ -275,6 +294,10 @@ function getVisibleQuestions(orderedQuestions, answers) {
   return orderedQuestions.filter((question) => {
     if (hiddenTargets.has(question.id)) {
       return false;
+    }
+
+    if (isBranchOnlyQuestion(question)) {
+      return branchTargets.has(question.id) && activeBranchTargets.has(question.id);
     }
 
     if (showTargets.has(question.id) && !shownTargets.has(question.id)) {
@@ -909,10 +932,10 @@ function SurveysPage() {
             survey={toSurveyCard(survey, isHR ? 'hr' : 'employee', stats?.total_employees || 0)}
             variant={isHR ? 'hr' : 'employee'}
             showProgress={isHR}
-            actionLabel={isHR && String(survey.status).toLowerCase() === 'draft' ? 'Конструктор' : 'Открыть'}
+            actionLabel={isHR && canOpenBuilderForSurvey(survey) ? 'Конструктор' : 'Открыть'}
             onAction={(surveyId) =>
               navigate(
-                isHR && String(survey.status).toLowerCase() === 'draft'
+                isHR && canOpenBuilderForSurvey(survey)
                   ? `/builder?survey=${surveyId}`
                   : `/surveys/${surveyId}`,
               )
@@ -1102,7 +1125,7 @@ function SurveyDetailPage() {
               >
                 Экспорт XLSX
               </Button>
-              {String(survey.status).toLowerCase() === 'draft' ? (
+              {canOpenBuilderForSurvey(survey) ? (
                 <NavLink to={`/builder?survey=${numericSurveyId}`}>
                   <Button icon={BrainCircuit}>Открыть конструктор</Button>
                 </NavLink>
@@ -1125,7 +1148,10 @@ function SurveyDetailPage() {
                   <div className="question-list__index">{index + 1}</div>
                   <div>
                     <strong>{question.text}</strong>
-                    <p>{question.type === 'scale' ? 'Шкала / eNPS' : question.type}</p>
+                    <p>
+                      {question.type === 'scale' ? 'Шкала / eNPS' : question.type}
+                      {isBranchOnlyQuestion(question) ? ' · Только по ветке' : ''}
+                    </p>
                   </div>
                 </div>
               ))}

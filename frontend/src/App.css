@@ -155,7 +155,6 @@
 
 .auth-form,
 .form-grid,
-.page-stack,
 .channel-stats,
 .history-list,
 .device-list,
@@ -164,6 +163,11 @@
 .question-list {
   display: grid;
   gap: 16px;
+}
+
+.page-stack {
+  display: grid;
+  gap: 24px;
 }
 
 .debug-code {
@@ -315,6 +319,12 @@
   margin: 8px 0 0;
 }
 
+.section-header > div,
+.panel__header > div,
+.survey-player__top > div:first-child {
+  min-width: 0;
+}
+
 .header-badges,
 .header-utilities,
 .survey-meta,
@@ -354,6 +364,10 @@
 }
 
 .panel {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  min-width: 0;
   padding: 24px;
 }
 
@@ -397,7 +411,7 @@
 .survey-grid,
 .builder-grid {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .metric-grid {
@@ -405,6 +419,8 @@
 }
 
 .dashboard-columns {
+  flex-wrap: wrap;
+  gap: 20px;
   align-items: stretch;
 }
 
@@ -424,20 +440,23 @@
 .builder-workbench {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-  gap: 18px;
+  gap: 20px;
+  align-items: start;
+}
+
+.builder-grid--setup {
   align-items: start;
 }
 
 .panel--builder-form,
-.panel--builder-canvas {
+.panel--builder-canvas,
+.panel--builder-editor {
   display: grid;
+  gap: 20px;
   align-content: start;
   height: auto;
   min-height: 0;
-  overflow: hidden;
-}
-
-.panel--builder-editor {
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -554,16 +573,32 @@
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
-}
-
-.question-list__item:last-child {
-  border-bottom: 0;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(247, 249, 252, 0.94);
 }
 
 .question-list__content {
   flex: 1 1 auto;
+}
+
+.question-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.question-list__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(233, 20, 40, 0.1);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .branch-editor,
@@ -659,6 +694,7 @@
   padding: 13px 16px;
   background: #ffffff;
   color: var(--text-main);
+  caret-color: #111111;
   font: inherit;
 }
 

@@ -50,6 +50,7 @@
   outline: none;
   background: transparent;
   color: var(--color-text);
+  caret-color: #111111;
   font-size: var(--font-size-md);
 }
 

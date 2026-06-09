@@ -2,6 +2,7 @@
 
 import hashlib
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -151,7 +152,7 @@ async def submit_response(
 
 @router.get(
     "/my-response",
-    response_model=ResponseStatus,
+    response_model=Optional[ResponseStatus],
     summary="Get my response",
     description="Return the current user's response for a survey.",
 )
@@ -192,10 +193,7 @@ async def get_my_response(
     response = result.scalar_one_or_none()
 
     if not response:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Response not found. You have not completed this survey yet.",
-        )
+        return None
 
     return ResponseStatus(
         id=response.id,

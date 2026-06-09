@@ -12,6 +12,7 @@ from models.response import SurveyResponse
 from models.survey import AnonymityMode, Survey, SurveyStatus
 from models.user import User, UserRole
 from services.notification_service import send_cascade_notification
+from services.survey_access_service import normalize_target_values
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -59,13 +60,16 @@ def send_survey_notifications(self, survey_id: int):
                     User.id != survey.created_by,
                 )
 
-                if survey.target_departments:
+                target_departments = normalize_target_values(survey.target_departments)
+                target_roles = normalize_target_values(survey.target_roles)
+
+                if target_departments:
                     user_query = user_query.where(
-                        User.department.in_(survey.target_departments)
+                        User.department.in_(target_departments)
                     )
-                if survey.target_roles:
+                if target_roles:
                     user_query = user_query.where(
-                        User.role.in_(survey.target_roles)
+                        User.role.in_(target_roles)
                     )
 
                 users_result = await db.execute(user_query)
@@ -135,13 +139,16 @@ def send_reminder(self, survey_id: int, hours_before: int = 24):
                     User.id.notin_(responded_ids) if responded_ids else True,
                 )
 
-                if survey.target_departments:
+                target_departments = normalize_target_values(survey.target_departments)
+                target_roles = normalize_target_values(survey.target_roles)
+
+                if target_departments:
                     user_query = user_query.where(
-                        User.department.in_(survey.target_departments)
+                        User.department.in_(target_departments)
                     )
-                if survey.target_roles:
+                if target_roles:
                     user_query = user_query.where(
-                        User.role.in_(survey.target_roles)
+                        User.role.in_(target_roles)
                     )
 
                 users_result = await db.execute(user_query)
