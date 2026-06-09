@@ -56,11 +56,27 @@ class Settings(BaseSettings):
     MAX_NOTIFICATIONS_PER_DAY: int = 5
 
     # CORS
+    FRONTEND_URL: str = "http://localhost:5173"
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
     ]
+    CORS_ORIGIN_REGEX: str = (
+        r"^https?://("
+        r"localhost|"
+        r"127\.0\.0\.1|"
+        r"10(?:\.\d{1,3}){3}|"
+        r"192\.168(?:\.\d{1,3}){2}|"
+        r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"
+        r")(?::\d+)?$"
+    )
+
+    def get_cors_origins(self) -> list[str]:
+        origins = list(self.CORS_ORIGINS)
+        if self.FRONTEND_URL and self.FRONTEND_URL not in origins:
+            origins.append(self.FRONTEND_URL)
+        return origins
 
     model_config = {
         "env_file": ".env",

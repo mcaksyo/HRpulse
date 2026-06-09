@@ -48,6 +48,17 @@ async def send_otp(phone: str) -> str:
     """
     phone = resolve_phone_alias(phone)
 
+    otp_key = f"otp:{phone}"
+    rate_key = f"otp_rate:{phone}"
+    existing_code = await redis_client.get(otp_key)
+
+    if await redis_client.exists(rate_key) and existing_code:
+        print(f"Repeat OTP request for {phone}, returning active code")
+        return existing_code
+
+    if await redis_client.exists(rate_key) and not existing_code:
+        await redis_client.delete(rate_key)
+
     # Проверка rate limit
     rate_key = f"otp_rate:{phone}"
     if await redis_client.exists(rate_key):
@@ -112,6 +123,7 @@ async def verify_otp(phone: str, code: str) -> bool:
     # Код верный — удаляем из Redis
     await redis_client.delete(otp_key)
     await redis_client.delete(attempts_key)
+    await redis_client.delete(f"otp_rate:{phone}")
     return True
 
 

@@ -1,6 +1,11 @@
+const DEFAULT_API_ROOT =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
+    : 'http://localhost:8000/api/v1';
+
 const API_ROOT =
   import.meta.env.VITE_API_URL?.replace(/\/$/, '') ||
-  'http://localhost:8000/api/v1';
+  DEFAULT_API_ROOT;
 
 const APP_ROOT = API_ROOT.replace(/\/api\/v1$/, '');
 

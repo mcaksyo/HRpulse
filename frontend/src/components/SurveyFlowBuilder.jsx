@@ -16,6 +16,7 @@ import '@xyflow/react/dist/style.css';
 import './SurveyFlowBuilder.css';
 
 const FLOW_STORAGE_PREFIX = 'pulsehr-flow-layout-v2';
+const SKIP_BRANCH_VALUE = 'Пропустить вопрос';
 const FLOW_NODE_TYPES = {
   surveyQuestion: SurveyQuestionNode,
 };
@@ -91,6 +92,36 @@ function getBranchValueOptions(question) {
 function getDefaultNextQuestion(questionId, questions) {
   const currentIndex = questions.findIndex((item) => item.id === questionId);
   return currentIndex >= 0 ? questions[currentIndex + 1] || null : null;
+}
+
+function isSkipBranchValue(value) {
+  return String(value ?? '') === SKIP_BRANCH_VALUE;
+}
+
+function getBranchOptionLabel(value) {
+  if (isSkipBranchValue(value)) {
+    return SKIP_BRANCH_VALUE;
+  }
+
+  return String(value);
+}
+
+function getQuestionBranchOptions(question, questions) {
+  const branchOptions = getBranchValueOptions(question);
+  const nextQuestion = getDefaultNextQuestion(question?.id, questions);
+
+  if (!question?.required && nextQuestion) {
+    return [SKIP_BRANCH_VALUE, ...branchOptions];
+  }
+
+  return branchOptions;
+}
+
+function getExplicitBranchRule(question, conditionValue) {
+  const branchRules = Array.isArray(question?.branch_rules) ? question.branch_rules : [];
+  return (
+    branchRules.find((rule) => String(rule.condition_value) === String(conditionValue)) || null
+  );
 }
 
 function getFallbackPosition(index) {
@@ -209,7 +240,7 @@ function SurveyQuestionNode({ data, selected }) {
                 className={`survey-flow-node__branch-row ${isActive ? 'survey-flow-node__branch-row--active' : ''} ${isSelected ? 'survey-flow-node__branch-row--selected' : ''}`}
               >
                 <div>
-                  <strong>{option}</strong>
+                  <strong>{getBranchOptionLabel(option)}</strong>
                   <span>{isActive ? 'Стрелка уже настроена' : 'Потяните стрелку к нужному вопросу'}</span>
                 </div>
                 <Handle
@@ -330,10 +361,22 @@ export default function SurveyFlowBuilder({
 
     setNodes((currentNodes) =>
       orderedQuestions.map((question, index) => {
+        const nextQuestion = getDefaultNextQuestion(question.id, orderedQuestions);
         const currentNode = currentNodes.find((node) => node.id === String(question.id));
         const selectedRule = Array.isArray(question.branch_rules)
           ? question.branch_rules.find((rule) => getEdgeId(question.id, rule.condition_value) === selectedBranchId)
           : null;
+        const hasImplicitSkipBranch =
+          !question.required &&
+          Boolean(nextQuestion) &&
+          !getExplicitBranchRule(question, SKIP_BRANCH_VALUE);
+        const activeBranchValues = Array.isArray(question.branch_rules)
+          ? question.branch_rules.map((rule) => String(rule.condition_value))
+          : [];
+
+        if (hasImplicitSkipBranch) {
+          activeBranchValues.push(SKIP_BRANCH_VALUE);
+        }
 
         return {
           id: String(question.id),
@@ -344,10 +387,9 @@ export default function SurveyFlowBuilder({
             index,
             question,
             typeLabel: getQuestionTypeLabel(question.type),
-            branchOptions: getBranchValueOptions(question),
-            activeBranchValues: Array.isArray(question.branch_rules)
-              ? question.branch_rules.map((rule) => String(rule.condition_value))
-              : [],
+            branchOptions: getQuestionBranchOptions(question, orderedQuestions),
+            activeBranchValues: [...new Set(activeBranchValues)],
+            implicitBranchValues: hasImplicitSkipBranch ? [SKIP_BRANCH_VALUE] : [],
             selectedBranchValue:
               selectedRule?.condition_value === undefined || selectedRule?.condition_value === null
                 ? ''
@@ -366,6 +408,7 @@ export default function SurveyFlowBuilder({
 
     orderedQuestions.forEach((question) => {
       const nextQuestion = getDefaultNextQuestion(question.id, orderedQuestions);
+      const explicitSkipRule = getExplicitBranchRule(question, SKIP_BRANCH_VALUE);
 
       if (nextQuestion) {
         items.push({
@@ -383,6 +426,44 @@ export default function SurveyFlowBuilder({
           markerEnd: {
             type: MarkerType.ArrowClosed,
             color: '#cbd5e1',
+          },
+        });
+      }
+
+      if (!question.required && nextQuestion && !explicitSkipRule) {
+        const color = '#0f766e';
+        const edgeId = getEdgeId(question.id, SKIP_BRANCH_VALUE);
+
+        items.push({
+          id: edgeId,
+          source: String(question.id),
+          sourceHandle: `branch::${encodeBranchValue(SKIP_BRANCH_VALUE)}`,
+          target: String(nextQuestion.id),
+          type: 'smoothstep',
+          animated: true,
+          label: 'Пропуск -> Далее',
+          labelBgPadding: [8, 4],
+          labelBgBorderRadius: 999,
+          labelBgStyle: {
+            fill: '#ffffff',
+            fillOpacity: 0.92,
+            stroke: color,
+            strokeWidth: 1,
+          },
+          style: {
+            stroke: color,
+            strokeWidth: selectedBranchId === edgeId ? 3 : 2.2,
+            strokeDasharray: '8 6',
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color,
+          },
+          data: {
+            kind: 'branch',
+            questionId: question.id,
+            conditionValue: SKIP_BRANCH_VALUE,
+            implicit: true,
           },
         });
       }
@@ -457,14 +538,16 @@ export default function SurveyFlowBuilder({
     const ruleIndex = branchRules.findIndex(
       (rule) => String(rule.condition_value) === String(conditionValue),
     );
-
-    if (ruleIndex < 0) {
-      return;
-    }
-
+    const fallbackTargetQuestion = getDefaultNextQuestion(questionId, orderedQuestions);
     const nextRule = {
       condition_question_id: questionId,
-      ...branchRules[ruleIndex],
+      ...(ruleIndex >= 0 ? branchRules[ruleIndex] : {}),
+      condition_value: conditionValue,
+      action: ruleIndex >= 0 ? branchRules[ruleIndex].action || 'skip_to' : 'skip_to',
+      target_question_id:
+        ruleIndex >= 0
+          ? branchRules[ruleIndex].target_question_id
+          : fallbackTargetQuestion?.id || null,
       ...patch,
     };
 
@@ -472,7 +555,11 @@ export default function SurveyFlowBuilder({
       nextRule.target_question_id = Number(nextRule.target_question_id);
     }
 
-    branchRules[ruleIndex] = nextRule;
+    if (ruleIndex >= 0) {
+      branchRules[ruleIndex] = nextRule;
+    } else {
+      branchRules.push(nextRule);
+    }
 
     try {
       await questionsAPI.update(surveyId, questionId, { branch_rules: branchRules });
@@ -583,11 +670,23 @@ export default function SurveyFlowBuilder({
   const selectedQuestion = selectedEdge?.data?.questionId
     ? orderedQuestions.find((item) => item.id === selectedEdge.data.questionId)
     : null;
-  const selectedRule = selectedQuestion
+  const selectedStoredRule = selectedQuestion
     ? (selectedQuestion.branch_rules || []).find(
         (rule) => String(rule.condition_value) === String(selectedEdge?.data?.conditionValue),
       )
     : null;
+  const selectedRule =
+    selectedStoredRule ||
+    (selectedQuestion &&
+    selectedEdge?.data?.implicit &&
+    String(selectedEdge?.data?.conditionValue) === SKIP_BRANCH_VALUE
+      ? {
+          condition_question_id: selectedQuestion.id,
+          condition_value: SKIP_BRANCH_VALUE,
+          action: 'skip_to',
+          target_question_id: getDefaultNextQuestion(selectedQuestion.id, orderedQuestions)?.id || null,
+        }
+      : null);
 
   return (
     <div className="survey-flow-builder">

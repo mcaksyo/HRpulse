@@ -75,6 +75,8 @@ const STATUS_META = {
   archived: { badge: 'archived', label: 'Архив' },
 };
 
+const SKIP_BRANCH_VALUE = 'Пропустить вопрос';
+
 function formatDate(value) {
   if (!value) {
     return 'Без срока';
@@ -178,6 +180,19 @@ function branchRuleMatches(rule, answers, fallbackQuestionId = null) {
   }
 
   const sourceAnswer = answers[sourceQuestionId];
+  if (String(rule.condition_value ?? '') === SKIP_BRANCH_VALUE) {
+    return (
+      sourceAnswer === undefined ||
+      sourceAnswer === null ||
+      sourceAnswer === '' ||
+      (Array.isArray(sourceAnswer) && sourceAnswer.length === 0) ||
+      (typeof sourceAnswer === 'object' &&
+        sourceAnswer !== null &&
+        !Array.isArray(sourceAnswer) &&
+        Object.keys(sourceAnswer).length === 0)
+    );
+  }
+
   if (sourceAnswer === undefined || sourceAnswer === null || sourceAnswer === '') {
     return false;
   }
@@ -329,6 +344,30 @@ function getChannelLabel(channel) {
   };
 
   return labels[String(channel || '').toLowerCase()] || String(channel || 'Канал');
+}
+
+function getPreferenceLabel(key) {
+  const labels = {
+    web_push_enabled: 'Веб-пуш уведомления',
+    sms_enabled: 'SMS-уведомления',
+    telegram_enabled: 'Уведомления в Telegram',
+    email_enabled: 'Уведомления по эл. почте',
+  };
+
+  return labels[String(key || '').toLowerCase()] || String(key || '').replaceAll('_', ' ');
+}
+
+function getNotificationStatusLabel(status) {
+  const labels = {
+    pending: 'В очереди',
+    sent: 'Отправлено',
+    delivered: 'Доставлено',
+    failed: 'Ошибка доставки',
+    opened: 'Открыто',
+    clicked: 'Переход выполнен',
+  };
+
+  return labels[String(status || '').toLowerCase()] || String(status || 'Событие');
 }
 
 function getAnonymityDescription(mode) {
@@ -1334,6 +1373,11 @@ function ProfilePage() {
       typeof value === 'boolean' &&
       !['id', 'user_id'].includes(key),
   );
+  const localizedHistory = history.map((item) => ({
+    ...item,
+    title: item.title || getChannelLabel(item.channel) || 'Уведомление',
+    body: item.body || getNotificationStatusLabel(item.status) || 'Событие зафиксировано в журнале',
+  }));
 
   return (
     <div className="page-stack">
@@ -1484,7 +1528,7 @@ function ProfilePage() {
                 className="settings-row"
                 onClick={() => togglePreference(key, value)}
               >
-                <span>{key.replaceAll('_', ' ')}</span>
+                <span>{getPreferenceLabel(key)}</span>
                 <strong>{value ? 'Вкл' : 'Выкл'}</strong>
               </button>
             ))}
@@ -1502,7 +1546,7 @@ function ProfilePage() {
             </div>
           </div>
           <div className="history-list">
-            {history.map((item) => (
+            {localizedHistory.map((item) => (
               <div key={item.id} className="history-item">
                 <div>
                   <strong>{item.title || item.channel || 'Уведомление'}</strong>

@@ -49,6 +49,11 @@
   margin-top: 32px;
 }
 
+.hero-stack > .hero-stack__card:not(.hero-stack__card--primary),
+.hero-pills {
+  display: none;
+}
+
 .hero-stack__card,
 .hero-pills span,
 .panel,
@@ -130,6 +135,10 @@
   gap: 16px;
   align-items: flex-start;
   margin-bottom: 24px;
+}
+
+.auth-panel__header p {
+  display: none;
 }
 
 .auth-panel__logo {
@@ -314,6 +323,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.header-badges {
+  display: none;
 }
 
 .header-utilities {
